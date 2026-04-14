@@ -29,6 +29,22 @@ export interface ChangeLogRow {
   created_at: Date | string;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function getConversation(
+  conversationId: string
+): Promise<ConversationRow | null> {
+  if (!UUID_RE.test(conversationId)) return null;
+  const r = await query<ConversationRow>(
+    `SELECT id, client_id, status, claude_messages, pending_action,
+            pending_image_url, created_at, updated_at
+       FROM conversations
+      WHERE id = $1`,
+    [conversationId]
+  );
+  return r.rows[0] ?? null;
+}
+
 export async function listConversations(
   clientId: string,
   limit = 50

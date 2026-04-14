@@ -55,9 +55,10 @@ export default async function ConversationsPage({ params }: PageProps) {
               : [];
             const lastTextMessage = getLastUserText(messages);
             return (
-              <article
+              <Link
                 key={c.id}
-                className="rounded-md border bg-card p-4 text-sm"
+                href={`/clients/${id}/conversations/${c.id}`}
+                className="block rounded-md border bg-card p-4 text-sm transition-colors hover:bg-muted/20"
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <span
@@ -83,22 +84,19 @@ export default async function ConversationsPage({ params }: PageProps) {
                   )}
                   {c.pending_image_url && (
                     <p className="text-xs text-muted-foreground">
-                      Pending image:{" "}
-                      <a
-                        href={c.pending_image_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="hover:underline"
-                      >
-                        open
-                      </a>
+                      Pending image preview attached
                     </p>
                   )}
                 </div>
-                <div className="mt-3 border-t pt-2 font-mono text-[10px] text-muted-foreground">
-                  ID: {c.id}
+                <div className="mt-3 flex items-center justify-between border-t pt-2">
+                  <code className="font-mono text-[10px] text-muted-foreground">
+                    {c.id.slice(0, 8)}…
+                  </code>
+                  <span className="text-[11px] text-muted-foreground">
+                    Open transcript →
+                  </span>
                 </div>
-              </article>
+              </Link>
             );
           })}
         </div>
