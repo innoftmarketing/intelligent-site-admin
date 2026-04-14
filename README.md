@@ -1,36 +1,114 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Intelligent Website — Admin Panel
 
-## Getting Started
+Private back-office web panel for the **Intelligent Website** SaaS product.
+It talks directly to the same PostgreSQL database that the WhatsApp agent
+and Trigger.dev tasks already use — no new data, no new APIs — and gives a
+human a screen to manage the clients table without SSHing into the VPS.
 
-First, run the development server:
+## What it does
+
+- **List clients** — searchable table with status badges and live-session indicators
+- **Add a client** — full onboarding form mirroring `scripts/onboard-client.ts`
+  from the backend (encrypted credentials, bcrypt-hashed PIN)
+- **Edit a client** — inline editing of name, WordPress URL, and the entire
+  brand profile (tone, language, do-nots, brand colors, etc.)
+- **Rotate credentials and PIN** — replace WP API key/secret, reset PIN,
+  unlock a locked account, force-end an active WhatsApp session
+- **Soft delete / reactivate** — toggle `active` without losing data
+- **Browse history** — read-only Conversations tab and Change log tab per client
+
+## Stack
+
+- Next.js 16 (App Router, server components, server actions)
+- React 19, TypeScript
+- Tailwind CSS 4 + shadcn/ui-style primitives
+- `pg` for direct PostgreSQL access (no ORM — matches the backend's style)
+- `bcrypt` for PIN hashing
+- `zod` for schema validation on forms and server actions
+- Web Crypto API (HMAC-SHA256) for the signed admin session cookie —
+  works in both the Edge runtime (proxy) and the Node runtime (actions)
+
+## Auth
+
+Single admin password, stored as the `ADMIN_PASSWORD` env var. Submitting
+the right password sets a signed cookie that lasts 30 days. The Next.js
+`proxy.ts` middleware bounces any unauthenticated request to `/login`.
+
+Ready to upgrade to multi-user later — add a `users` table and swap the
+password check for a real sign-in, everything else stays the same.
+
+## Local development
 
 ```bash
-npm run dev
-# or
+# 1. Open an SSH tunnel to the production Postgres (in a dedicated terminal)
+ssh -i ~/.ssh/paperclip_vps -L 54321:10.0.7.2:5432 -N root@188.245.198.89
+
+# 2. Copy the example env file and fill in the values
+cp .env.example .env.local
+#    DATABASE_URL=postgresql://paperclip:paperclip@localhost:54321/intelligent_site
+#    MASTER_ENCRYPTION_KEY=<same as backend>
+#    ADMIN_PASSWORD=changeme
+#    SESSION_SECRET=$(openssl rand -hex 32)
+
+# 3. Install and run
+yarn install
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Visit <http://localhost:3000>, login with the admin password, and you're in.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deployment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+See [`DEPLOY.md`](./DEPLOY.md) for the step-by-step Coolify setup. tl;dr:
 
-## Learn More
+1. Push to a GitHub repo
+2. New Coolify project → Dockerfile build pack → point at the repo
+3. Set the 4 environment variables (same ones as `.env.example`)
+4. Route to `admin.innoft.link` (or any other subdomain)
+5. Deploy — first build is ~2 minutes, subsequent deploys ~30 seconds
 
-To learn more about Next.js, take a look at the following resources:
+## Project layout
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+app/
+  (panel)/            Layout group — all authenticated pages
+    clients/
+      page.tsx        List view
+      new/            Add client form
+      [id]/           Client detail
+        page.tsx
+        conversations/
+        changelog/
+    layout.tsx        Header with Clients link + Sign out
+  login/              Public login page
+  logout/             POST route that clears the cookie
+  api/health/         DB connectivity probe
+components/
+  add-client-form.tsx
+  clients-table.tsx
+  editable-client.tsx
+  form-primitives.tsx
+  status-badge.tsx
+lib/
+  db.ts               pg.Pool wrapper
+  encryption.ts       AES-256-GCM — mirrors the backend
+  auth-helpers.ts     bcrypt.hashPin — mirrors the backend
+  session.ts          Web Crypto HMAC cookie helper
+  clients.ts          Server-only DB queries
+  clients-shared.ts   Pure types + helpers (client components can import)
+  client-schema.ts    Zod validation shared between add and edit
+  history.ts          Conversations + change_log queries
+proxy.ts              Next.js middleware (auth bounce)
+Dockerfile            Multi-stage, Next.js standalone output
+DEPLOY.md             Coolify step-by-step
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Safety notes
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- The panel writes directly to the **production** database. There's no
+  separate dev/staging — every "Save changes" hits real data.
+- The `MASTER_ENCRYPTION_KEY` now lives in two places (backend + panel).
+  Any rotation must update both environments in lockstep.
+- Every operational action is reversible: soft delete flips `active`,
+  unlock clears the lock columns, end session NULLs the token. No hard
+  deletes from the panel.
