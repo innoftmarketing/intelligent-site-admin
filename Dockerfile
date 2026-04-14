@@ -17,10 +17,12 @@ RUN yarn install --frozen-lockfile --production=false --network-timeout 600000
 # ---------- builder ----------
 FROM node:24-alpine AS builder
 WORKDIR /app
-# Same reasoning as in deps: keep NODE_ENV out of production mode during
-# the Next.js build so all dev tooling (Tailwind, PostCSS, TypeScript) is
-# available while compiling. The final runtime stage pins NODE_ENV=production.
-ENV NODE_ENV=development
+# Next.js expects NODE_ENV=production here so it compiles the real
+# production React (the dev build of React lacks Suspense/useContext
+# behavior that the prerender step relies on). The devDependencies are
+# already physically present in node_modules from the deps stage, so
+# Next's build will pick them up regardless of NODE_ENV.
+ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
