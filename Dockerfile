@@ -6,12 +6,21 @@ FROM node:24-alpine AS deps
 WORKDIR /app
 # bcrypt has a native addon that needs build tools + python during install.
 RUN apk add --no-cache libc6-compat python3 make g++
+# Force dev dependencies too, even if NODE_ENV=production leaks in as a
+# build arg from the orchestrator (Coolify passes all env vars as build args
+# by default). Without --production=false, yarn 1 would skip devDependencies
+# and the builder stage would fail with "Cannot find module '@tailwindcss/postcss'".
+ENV NODE_ENV=development
 COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --network-timeout 600000
+RUN yarn install --frozen-lockfile --production=false --network-timeout 600000
 
 # ---------- builder ----------
 FROM node:24-alpine AS builder
 WORKDIR /app
+# Same reasoning as in deps: keep NODE_ENV out of production mode during
+# the Next.js build so all dev tooling (Tailwind, PostCSS, TypeScript) is
+# available while compiling. The final runtime stage pins NODE_ENV=production.
+ENV NODE_ENV=development
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
