@@ -2,8 +2,31 @@
 // works in both the Node runtime (server actions, route handlers) and the
 // Edge runtime (Next.js proxy / middleware).
 
+import { headers } from "next/headers";
+
 const COOKIE_NAME = "ispa_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+// Detect whether the current request reached us over HTTPS. We can't rely on
+// NODE_ENV for the cookie `secure` flag because deployments on plain HTTP
+// (e.g. the Coolify sslip.io URL before a TLS cert is provisioned) would
+// then set Secure cookies that the browser immediately discards, causing
+// apparent "logout on every action" behavior.
+async function isHttpsRequest(): Promise<boolean> {
+  try {
+    const h = await headers();
+    const proto =
+      h.get("x-forwarded-proto") ??
+      h.get("x-forwarded-protocol") ??
+      h.get("x-url-scheme") ??
+      "";
+    return proto.toLowerCase().startsWith("https");
+  } catch {
+    // headers() throws outside of a request context (e.g. during build).
+    // Default to insecure — nothing to protect outside a real request.
+    return false;
+  }
+}
 
 interface SessionPayload {
   sub: "admin";
@@ -116,27 +139,29 @@ export async function freshSessionCookie(): Promise<{
   };
 }> {
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
+  const secure = await isHttpsRequest();
   return {
     name: COOKIE_NAME,
     value: await sign({ sub: "admin", exp }),
     options: {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure,
       path: "/",
       maxAge: SESSION_TTL_SECONDS,
     },
   };
 }
 
-export function expiredSessionCookie() {
+export async function expiredSessionCookie() {
+  const secure = await isHttpsRequest();
   return {
     name: COOKIE_NAME,
     value: "",
     options: {
       httpOnly: true,
       sameSite: "lax" as const,
-      secure: process.env.NODE_ENV === "production",
+      secure,
       path: "/",
       maxAge: 0,
     },
