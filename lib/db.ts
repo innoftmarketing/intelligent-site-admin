@@ -19,15 +19,22 @@ function makePool(): Pool {
   });
 }
 
-// Reuse a single Pool across HMR reloads in dev to avoid leaking connections.
-export const pool: Pool = global.__pgPool ?? makePool();
-if (process.env.NODE_ENV !== "production") {
-  global.__pgPool = pool;
+// Lazy accessor — we intentionally do NOT create the pool at module-eval time.
+// Next.js runs module code during its "Collecting page data" build step to
+// figure out which routes are static vs dynamic; at that moment env vars like
+// DATABASE_URL are not set, and eagerly calling `makePool()` would throw and
+// break the build. Creating the pool inside `getPool()` means the connection
+// is only opened when a request actually runs a query.
+function getPool(): Pool {
+  if (!global.__pgPool) {
+    global.__pgPool = makePool();
+  }
+  return global.__pgPool;
 }
 
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[]
 ): Promise<QueryResult<T>> {
-  return pool.query<T>(text, params as never);
+  return getPool().query<T>(text, params as never);
 }
